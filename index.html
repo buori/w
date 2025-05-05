@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>동탄 날씨</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #eef2f3;
+      text-align: center;
+      padding: 2rem;
+    }
+    .loading {
+      font-size: 1.5rem;
+      margin-top: 3rem;
+    }
+    .weather-box {
+      display: inline-block;
+      background: white;
+      border-radius: 1rem;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      padding: 1.5rem;
+      margin: 1rem;
+      min-width: 250px;
+    }
+    .weather-box img {
+      width: 80px;
+      height: 80px;
+    }
+    h1 {
+      font-size: 1.8rem;
+      margin-bottom: 2rem;
+    }
+    h2 {
+      margin-bottom: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <h1 id="title">동탄 날씨</h1>
+  <div class="loading" id="loading">🌤️ 날씨 정보를 불러오는 중... (최대 3~4분 소요될 수 있습니다)</div>
+  <div id="weatherContainer" style="display:none;"></div>
+
+  <script>
+    const serviceKey = '여기에_기상청_API_서비스키_입력';
+    const nx = 60, ny = 120; // 동탄 좌표
+
+    function formatDate(date) {
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const dd = String(date.getDate()).padStart(2, '0');
+      return `${yyyy}${mm}${dd}`;
+    }
+
+    function getBaseTime() {
+      const hour = new Date().getHours();
+      if (hour < 2) return "2300";
+      if (hour < 5) return "0200";
+      if (hour < 8) return "0500";
+      if (hour < 11) return "0800";
+      if (hour < 14) return "1100";
+      if (hour < 17) return "1400";
+      if (hour < 20) return "1700";
+      if (hour < 23) return "2000";
+      return "2300";
+    }
+
+    function getWeatherIcon(sky, pty) {
+      if (pty === "1" || pty === "4") return "rain.png";
+      if (pty === "3") return "snow.png";
+      if (sky === "1") return "sunny.png";
+      if (sky === "3" || sky === "4") return "cloudy.png"; // 구름 많음과 흐림 통합
+      return "unknown.png";
+    }
+
+    async function fetchWeather(date, label) {
+      const base_date = formatDate(new Date());
+      const base_time = getBaseTime();
+
+      const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=${serviceKey}&pageNo=1&numOfRows=1000&dataType=JSON&base_date=${base_date}&base_time=${base_time}&nx=${nx}&ny=${ny}`;
+
+      const res = await fetch(url);
+      const data = await res.json();
+      const items = data.response.body.items.item;
+
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() + date);
+      const targetDateStr = formatDate(targetDate);
+
+      const filtered = items.filter(i => i.fcstDate === targetDateStr && i.fcstTime === "1500");
+      const weather = {
+        TMP: '정보 없음', SKY: '', PTY: '', REH: '정보 없음', WSD: '정보 없음'
+      };
+      filtered.forEach(item => {
+        if (weather[item.category] !== undefined) weather[item.category] = item.fcstValue;
+      });
+
+      const icon = getWeatherIcon(weather.SKY, weather.PTY);
+      return {
+        label,
+        temperature: weather.TMP + "°C",
+        humidity: weather.REH + "%",
+        wind: weather.WSD + "m/s",
+        icon
+      };
+    }
+
+    async function displayWeather() {
+      const today = new Date();
+      const title = `${today.getFullYear()}년 ${today.getMonth() + 1}월 ${today.getDate()}일 동탄 날씨`;
+      document.getElementById("title").textContent = title;
+
+      const todayData = await fetchWeather(0, "오늘 날씨");
+      const tomorrowData = await fetchWeather(1, "내일 날씨");
+
+      const container = document.getElementById("weatherContainer");
+      [todayData, tomorrowData].forEach(data => {
+        const box = document.createElement("div");
+        box.className = "weather-box";
+        box.innerHTML = `
+          <h2>${data.label}</h2>
+          <img src="images/${data.icon}" alt="날씨 아이콘">
+          <p>🌡️ 온도: ${data.temperature}</p>
+          <p>💧 습도: ${data.humidity}</p>
+          <p>🌬️ 풍속: ${data.wind}</p>
+        `;
+        container.appendChild(box);
+      });
+
+      document.getElementById("loading").style.display = "none";
+      container.style.display = "flex";
+      container.style.justifyContent = "center";
+      container.style.flexWrap = "wrap";
+    }
+
+    displayWeather();
+  </script>
+</body>
+</html>
