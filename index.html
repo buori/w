@@ -39,12 +39,12 @@
 </head>
 <body>
   <h1 id="title">동탄 날씨</h1>
-  <div class="loading" id="loading">🌤️ 날씨 정보를 불러오는 중... (최대 3~4분 소요될 수 있습니다)</div>
+  <div class="loading" id="loading">🌤️ 날씨 정보를 불러오는 중... 잠시만 기다려주세요.</div>
   <div id="weatherContainer" style="display:none;"></div>
 
   <script>
     const serviceKey = '여기에_기상청_API_서비스키_입력';
-    const nx = 60, ny = 120; // 동탄 좌표
+    const nx = 60, ny = 120;
 
     function formatDate(date) {
       const yyyy = date.getFullYear();
@@ -70,22 +70,21 @@
       if (pty === "1" || pty === "4") return "rain.png";
       if (pty === "3") return "snow.png";
       if (sky === "1") return "sunny.png";
-      if (sky === "3" || sky === "4") return "cloudy.png"; // 구름 많음과 흐림 통합
+      if (sky === "3" || sky === "4") return "cloudy.png";
       return "unknown.png";
     }
 
-    async function fetchWeather(date, label) {
+    async function fetchWeather(dateOffset, label) {
       const base_date = formatDate(new Date());
       const base_time = getBaseTime();
-
-      const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=${serviceKey}&pageNo=1&numOfRows=1000&dataType=JSON&base_date=${base_date}&base_time=${base_time}&nx=${nx}&ny=${ny}`;
+      const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=${serviceKey}&pageNo=1&numOfRows=100&dataType=JSON&base_date=${base_date}&base_time=${base_time}&nx=${nx}&ny=${ny}`;
 
       const res = await fetch(url);
       const data = await res.json();
       const items = data.response.body.items.item;
 
       const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() + date);
+      targetDate.setDate(targetDate.getDate() + dateOffset);
       const targetDateStr = formatDate(targetDate);
 
       const filtered = items.filter(i => i.fcstDate === targetDateStr && i.fcstTime === "1500");
@@ -111,8 +110,11 @@
       const title = `${today.getFullYear()}년 ${today.getMonth() + 1}월 ${today.getDate()}일 동탄 날씨`;
       document.getElementById("title").textContent = title;
 
-      const todayData = await fetchWeather(0, "오늘 날씨");
-      const tomorrowData = await fetchWeather(1, "내일 날씨");
+      // 병렬로 API 요청
+      const [todayData, tomorrowData] = await Promise.all([
+        fetchWeather(0, "오늘 날씨"),
+        fetchWeather(1, "내일 날씨")
+      ]);
 
       const container = document.getElementById("weatherContainer");
       [todayData, tomorrowData].forEach(data => {
