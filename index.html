@@ -39,13 +39,13 @@
 </head>
 <body>
   <h1 id="title">동탄 날씨</h1>
-  <div class="loading" id="loading">🌤️ 날씨 정보를 불러오는 중... 잠시만 기다려주세요.</div>
+  <div class="loading" id="loading">🌤️ 날씨 정보를 불러오는 중...</div>
   <div id="weatherContainer" style="display:none;"></div>
 
   <script>
-    const serviceKey = 'UX0oUh7ZWRuQW2qnng2rzw8U14zs2TmY9DYi8Eqs0SDQpo1wMe0l/BtVqaYcl7LYEJP0wysrk3xmQFgeE5iTJQ==
-';
-    const nx = 60, ny = 120;
+    const serviceKey = UX0oUh7ZWRuQW2qnng2rzw8U14zs2TmY9DYi8Eqs0SDQpo1wMe0l/BtVqaYcl7LYEJP0wysrk3xmQFgeE5iTJQ==
+; // 반드시 본인 서비스 키 입력
+    const nx = 60, ny = 120; // 동탄 좌표
 
     function formatDate(date) {
       const yyyy = date.getFullYear();
@@ -76,34 +76,47 @@
     }
 
     async function fetchWeather(dateOffset, label) {
-      const base_date = formatDate(new Date());
-      const base_time = getBaseTime();
-      const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=${serviceKey}&pageNo=1&numOfRows=100&dataType=JSON&base_date=${base_date}&base_time=${base_time}&nx=${nx}&ny=${ny}`;
+      try {
+        const base_date = formatDate(new Date());
+        const base_time = getBaseTime();
+        const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=${serviceKey}&pageNo=1&numOfRows=300&dataType=JSON&base_date=${base_date}&base_time=${base_time}&nx=${nx}&ny=${ny}`;
+        
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`API 응답 실패: ${res.status}`);
 
-      const res = await fetch(url);
-      const data = await res.json();
-      const items = data.response.body.items.item;
+        const data = await res.json();
+        const items = data.response.body.items.item;
 
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() + dateOffset);
-      const targetDateStr = formatDate(targetDate);
+        const targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() + dateOffset);
+        const targetDateStr = formatDate(targetDate);
 
-      const filtered = items.filter(i => i.fcstDate === targetDateStr && i.fcstTime === "1500");
-      const weather = {
-        TMP: '정보 없음', SKY: '', PTY: '', REH: '정보 없음', WSD: '정보 없음'
-      };
-      filtered.forEach(item => {
-        if (weather[item.category] !== undefined) weather[item.category] = item.fcstValue;
-      });
+        const filtered = items.filter(i => i.fcstDate === targetDateStr && i.fcstTime === "1500");
+        const weather = {
+          TMP: '정보 없음', SKY: '', PTY: '', REH: '정보 없음', WSD: '정보 없음'
+        };
+        filtered.forEach(item => {
+          if (weather[item.category] !== undefined) weather[item.category] = item.fcstValue;
+        });
 
-      const icon = getWeatherIcon(weather.SKY, weather.PTY);
-      return {
-        label,
-        temperature: weather.TMP + "°C",
-        humidity: weather.REH + "%",
-        wind: weather.WSD + "m/s",
-        icon
-      };
+        const icon = getWeatherIcon(weather.SKY, weather.PTY);
+        return {
+          label,
+          temperature: weather.TMP + "°C",
+          humidity: weather.REH + "%",
+          wind: weather.WSD + "m/s",
+          icon
+        };
+      } catch (e) {
+        console.error(`[${label}] 날씨 정보 로드 실패:`, e);
+        return {
+          label,
+          temperature: '오류',
+          humidity: '오류',
+          wind: '오류',
+          icon: 'unknown.png'
+        };
+      }
     }
 
     async function displayWeather() {
@@ -111,7 +124,6 @@
       const title = `${today.getFullYear()}년 ${today.getMonth() + 1}월 ${today.getDate()}일 동탄 날씨`;
       document.getElementById("title").textContent = title;
 
-      // 병렬로 API 요청
       const [todayData, tomorrowData] = await Promise.all([
         fetchWeather(0, "오늘 날씨"),
         fetchWeather(1, "내일 날씨")
