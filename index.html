@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>동탄 날씨</title>
   <style>
@@ -11,128 +11,194 @@
       text-align: center;
       padding: 2rem;
     }
+    .loading {
+      font-size: 1.5rem;
+      margin-top: 3rem;
+    }
     .weather-box {
+      display: inline-block;
       background: white;
       border-radius: 1rem;
       box-shadow: 0 4px 10px rgba(0,0,0,0.1);
       padding: 1.5rem;
-      margin: 1rem auto;
-      min-width: 280px;
-      max-width: 400px;
+      margin: 1rem;
+      min-width: 250px;
     }
     .weather-box img {
-      width: 60px;
-      height: 60px;
+      width: 80px;
+      height: 80px;
     }
     h1 {
-      font-size: 2rem;
+      font-size: 1.8rem;
       margin-bottom: 2rem;
     }
-    .sub-weather {
-      display: flex;
-      justify-content: space-around;
-      margin-top: 1rem;
-    }
-    .sub-weather div {
-      text-align: center;
+    h2 {
+      margin-bottom: 0.5rem;
     }
   </style>
 </head>
 <body>
-  <h1>동탄의 날씨</h1>
-  <div id="loading">🌤️ 날씨 정보를 불러오는 중...</div>
+  <h1 id="title">동탄 날씨</h1>
+  <div class="loading" id="loading">🌤️ 날씨 정보를 불러오는 중... (최대 3~4분 소요될 수 있습니다)</div>
   <div id="weatherContainer" style="display:none;"></div>
 
   <script>
     const serviceKey = 'UX0oUh7ZWRuQW2qnng2rzw8U14zs2TmY9DYi8Eqs0SDQpo1wMe0l/BtVqaYcl7LYEJP0wysrk3xmQFgeE5iTJQ==';
-    const nx = 60, ny = 120; // 동탄 좌표
+    const nx = 60, ny = 120;
 
-    function formatDate(date) {
-      return date.toISOString().split('T')[0].replace(/-/g, '');
-    }
+    const getBaseDateTime = () => {
+      const now = new Date();
+      const baseDate = now.toISOString().split('T')[0].replace(/-/g, '');
+      const hour = now.getHours();
+      if (hour < 2) return [getYesterDate(), '2300'];
+      if (hour < 5) return [baseDate, '0200'];
+      if (hour < 8) return [baseDate, '0500'];
+      if (hour < 11) return [baseDate, '0800'];
+      if (hour < 14) return [baseDate, '1100'];
+      if (hour < 17) return [baseDate, '1400'];
+      if (hour < 20) return [baseDate, '1700'];
+      if (hour < 23) return [baseDate, '2000'];
+      return [baseDate, '2300'];
+    };
 
-    function getWeatherIcon(sky, pty) {
+    const getYesterDate = () => {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().split('T')[0].replace(/-/g, '');
+    };
+
+    const getWeatherIcon = (sky, pty) => {
       if (pty === "1" || pty === "4") return "rain.png";
+      if (pty === "2") return "rain_snow.png";
       if (pty === "3") return "snow.png";
       if (sky === "1") return "sunny.png";
       if (sky === "3" || sky === "4") return "cloudy.png";
       return "unknown.png";
-    }
+    };
 
-    function getComment(sky, pty) {
-      if (pty === "1" || pty === "4") return "비가 오고 있어요.";
-      if (pty === "3") return "눈이 오고 있어요.";
-      if (sky === "1") return "쾌청한 날씨예요!";
-      if (sky === "3") return "구름이 많아요.";
-      if (sky === "4") return "흐린 날씨예요.";
-      return "날씨 정보를 확인할 수 없습니다.";
-    }
+    const getTimeLabel = (timeStr) => {
+      if (timeStr === "0600") return "아침";
+      if (timeStr === "1200") return "점심";
+      if (timeStr === "1800") return "저녁";
+      return timeStr;
+    };
 
-    async function fetchForecast(dateOffset, times) {
-      const baseDate = new Date();
-      baseDate.setDate(baseDate.getDate() + (dateOffset || 0));
-      const dateStr = formatDate(baseDate);
-      const now = new Date();
-      const baseHour = now.getHours() < 2 ? "2300" : ["0200","0500","0800","1100","1400","1700","2000","2300"].find(t => parseInt(t) > now.getHours()*100) || "2300";
+    async function fetchWeatherForDay(offset) {
+      const [baseDate, baseTime] = getBaseDateTime();
+      const target = new Date();
+      target.setDate(target.getDate() + offset);
+      const targetDateStr = target.toISOString().split('T')[0].replace(/-/g, '');
 
-      const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=${serviceKey}&pageNo=1&numOfRows=1000&dataType=JSON&base_date=${formatDate(new Date())}&base_time=${baseHour}&nx=${nx}&ny=${ny}`;
-
+      const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=${serviceKey}&pageNo=1&numOfRows=1000&dataType=JSON&base_date=${baseDate}&base_time=${baseTime}&nx=${nx}&ny=${ny}`;
       const res = await fetch(url);
       const data = await res.json();
       const items = data.response.body.items.item;
 
-      const result = {};
-      for (let time of times) {
-        const fcst = items.filter(i => i.fcstDate === dateStr && i.fcstTime === time);
-        const obj = {};
-        fcst.forEach(i => obj[i.category] = i.fcstValue);
-        result[time] = obj;
-      }
-      return result;
+      return items.filter(i => i.fcstDate === targetDateStr);
     }
 
-    function renderSubWeather(timeLabel, icon, temp) {
-      return `<div><div>${timeLabel}</div><img src="images/${icon}"/><div>${temp}°C</div></div>`;
+    function summarizeDayWeather(items) {
+      const times = ["0600", "1200", "1800"];
+      const summaries = {};
+      let rainExpected = false;
+      const skySet = new Set();
+      const ptySet = new Set();
+
+      times.forEach(time => {
+        const filtered = items.filter(i => i.fcstTime === time);
+        const map = { TMP: "", SKY: "", PTY: "" };
+        filtered.forEach(i => {
+          if (map[i.category] !== undefined) map[i.category] = i.fcstValue;
+        });
+        summaries[time] = map;
+        skySet.add(map.SKY);
+        ptySet.add(map.PTY);
+        if (["1", "2", "3", "4"].includes(map.PTY)) rainExpected = true;
+      });
+
+      let comment = "오늘은 맑은 날씨예요.";
+      if (rainExpected) comment = "하루 중 비가 올 수 있어요.";
+      else if (skySet.has("4")) comment = "흐린 날씨예요.";
+      else if (skySet.has("3")) comment = "구름이 많은 날씨예요.";
+
+      return { summaries, comment };
     }
 
     async function displayWeather() {
-      const todayData = await fetchForecast(0, ["0600","1200","1800"]); // 아침/점심/저녁
-      const tomorrowData = await fetchForecast(1, ["1200"]); // 내일 정오 기준
+      const weatherContainer = document.getElementById("weatherContainer");
+      const todayItems = await fetchWeatherForDay(0);
+      const tomorrowItems = await fetchWeatherForDay(1);
 
-      const mainTime = "1200";
-      const today = todayData[mainTime];
-      const tomorrow = tomorrowData["1200"];
+      const { summaries, comment } = summarizeDayWeather(todayItems);
 
-      const container = document.getElementById("weatherContainer");
-
-      const todayIcon = getWeatherIcon(today.SKY, today.PTY);
-      const todayComment = getComment(today.SKY, today.PTY);
-
-      const box = document.createElement("div");
-      box.className = "weather-box";
-      box.innerHTML = `
-        <h2>오늘 요약 날씨</h2>
-        <div>${todayComment}</div>
-        <img src="images/${todayIcon}" alt="날씨 아이콘">
-        <p>🌡️ 온도: ${today.TMP}°C</p>
-        <p>💧 습도: ${today.REH}%</p>
-        <p>🌬️ 풍속: ${today.WSD}m/s</p>
-        <div class="sub-weather">
-          ${renderSubWeather("아침", getWeatherIcon(todayData["0600"].SKY, todayData["0600"].PTY), todayData["0600"].TMP)}
-          ${renderSubWeather("점심", getWeatherIcon(todayData["1200"].SKY, todayData["1200"].PTY), todayData["1200"].TMP)}
-          ${renderSubWeather("저녁", getWeatherIcon(todayData["1800"].SKY, todayData["1800"].PTY), todayData["1800"].TMP)}
-        </div>
-        <hr />
-        <h2>내일 날씨</h2>
-        <img src="images/${getWeatherIcon(tomorrow.SKY, tomorrow.PTY)}" alt="내일 아이콘">
-        <p>🌡️ 온도: ${tomorrow.TMP}°C</p>
-        <p>💧 습도: ${tomorrow.REH}%</p>
-        <p>🌬️ 풍속: ${tomorrow.WSD}m/s</p>
+      // 오늘 요약
+      const summaryBox = document.createElement("div");
+      summaryBox.className = "weather-box";
+      summaryBox.innerHTML = `
+        <h2>오늘 요약</h2>
+        <p>${comment}</p>
       `;
+      weatherContainer.appendChild(summaryBox);
 
-      container.appendChild(box);
+      // 아침/점심/저녁
+      ["0600", "1200", "1800"].forEach(time => {
+        const data = summaries[time];
+        const icon = getWeatherIcon(data.SKY, data.PTY);
+        const box = document.createElement("div");
+        box.className = "weather-box";
+        box.innerHTML = `
+          <h2>${getTimeLabel(time)}</h2>
+          <img src="images/${icon}" alt="날씨 아이콘">
+          <p>🌡️ ${data.TMP}°C</p>
+        `;
+        weatherContainer.appendChild(box);
+      });
+
+      // 현재 날씨
+      const now = new Date();
+      const currentHour = now.getHours();
+      const closestHour = String(Math.floor(currentHour / 3) * 100).padStart(4, '0');
+      const currentData = todayItems.filter(i => i.fcstTime === closestHour);
+      const nowMap = { TMP: '', SKY: '', PTY: '', REH: '', WSD: '' };
+      currentData.forEach(i => {
+        if (nowMap[i.category] !== undefined) nowMap[i.category] = i.fcstValue;
+      });
+      const nowIcon = getWeatherIcon(nowMap.SKY, nowMap.PTY);
+
+      const nowBox = document.createElement("div");
+      nowBox.className = "weather-box";
+      nowBox.innerHTML = `
+        <h2>현재 날씨</h2>
+        <img src="images/${nowIcon}" alt="날씨 아이콘">
+        <p>🌡️ 온도: ${nowMap.TMP}°C</p>
+        <p>💧 습도: ${nowMap.REH}%</p>
+        <p>🌬️ 풍속: ${nowMap.WSD}m/s</p>
+      `;
+      weatherContainer.appendChild(nowBox);
+
+      // 내일 날씨 (정오 기준)
+      const tmr1200 = tomorrowItems.filter(i => i.fcstTime === "1200");
+      const tmrMap = { TMP: '', SKY: '', PTY: '', REH: '', WSD: '' };
+      tmr1200.forEach(i => {
+        if (tmrMap[i.category] !== undefined) tmrMap[i.category] = i.fcstValue;
+      });
+      const tmrIcon = getWeatherIcon(tmrMap.SKY, tmrMap.PTY);
+
+      const tmrBox = document.createElement("div");
+      tmrBox.className = "weather-box";
+      tmrBox.innerHTML = `
+        <h2>내일 날씨</h2>
+        <img src="images/${tmrIcon}" alt="날씨 아이콘">
+        <p>🌡️ 온도: ${tmrMap.TMP}°C</p>
+        <p>💧 습도: ${tmrMap.REH}%</p>
+        <p>🌬️ 풍속: ${tmrMap.WSD}m/s</p>
+      `;
+      weatherContainer.appendChild(tmrBox);
+
       document.getElementById("loading").style.display = "none";
-      container.style.display = "block";
+      weatherContainer.style.display = "flex";
+      weatherContainer.style.flexWrap = "wrap";
+      weatherContainer.style.justifyContent = "center";
     }
 
     displayWeather();
