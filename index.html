@@ -3,17 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>동탄 날씨</title>
+  <title>동탄의 날씨</title>
   <style>
     body {
       font-family: sans-serif;
       background: #eef2f3;
       text-align: center;
       padding: 2rem;
-    }
-    .loading {
-      font-size: 1.5rem;
-      margin-top: 3rem;
     }
     .weather-box {
       display: inline-block;
@@ -22,7 +18,7 @@
       box-shadow: 0 4px 10px rgba(0,0,0,0.1);
       padding: 1.5rem;
       margin: 1rem;
-      min-width: 250px;
+      min-width: 260px;
     }
     .weather-box img {
       width: 80px;
@@ -35,16 +31,20 @@
     h2 {
       margin-bottom: 0.5rem;
     }
+    .loading {
+      font-size: 1.5rem;
+      margin-top: 3rem;
+    }
   </style>
 </head>
 <body>
-  <h1 id="title">동탄 날씨</h1>
+  <h1>동탄의 날씨</h1>
   <div class="loading" id="loading">🌤️ 날씨 정보를 불러오는 중... (최대 3~4분 소요될 수 있습니다)</div>
   <div id="weatherContainer" style="display:none;"></div>
 
   <script>
     const serviceKey = 'UX0oUh7ZWRuQW2qnng2rzw8U14zs2TmY9DYi8Eqs0SDQpo1wMe0l/BtVqaYcl7LYEJP0wysrk3xmQFgeE5iTJQ==';
-    const nx = 60, ny = 120; // 동탄 좌표
+    const nx = 60, ny = 120;
 
     function formatDate(date) {
       const yyyy = date.getFullYear();
@@ -53,17 +53,19 @@
       return `${yyyy}${mm}${dd}`;
     }
 
-    function getBaseTime() {
-      const hour = new Date().getHours();
-      if (hour < 2) return "2300";
-      if (hour < 5) return "0200";
-      if (hour < 8) return "0500";
-      if (hour < 11) return "0800";
-      if (hour < 14) return "1100";
-      if (hour < 17) return "1400";
-      if (hour < 20) return "1700";
-      if (hour < 23) return "2000";
-      return "2300";
+    function getLatestForecastTime() {
+      const now = new Date();
+      const hours = [23, 20, 17, 14, 11, 8, 5, 2];
+      const currentHour = now.getHours();
+      for (const h of hours) {
+        if (currentHour >= h) return h.toString().padStart(2, '0') + '00';
+      }
+      return '2300';
+    }
+
+    function getForecastHour() {
+      const now = new Date();
+      return String((Math.floor(now.getHours() / 3) * 3 + 3) % 24).padStart(2, '0') + '00';
     }
 
     function getWeatherIcon(sky, pty) {
@@ -74,57 +76,92 @@
       return "unknown.png";
     }
 
-    function getComment(skyValues, ptyValues) {
-      if (ptyValues.includes("3")) return "하루 중 눈이 올 수 있어요, 미끄러지지 않게 조심하세요.";
-      if (ptyValues.includes("1") || ptyValues.includes("4")) return "하루 중 비가 올 수 있어요, 우산을 챙겨주세요.";
-      if (skyValues.every(sky => sky === "1")) return "하루 종일 맑은 날씨가 예상됩니다.";
-      if (skyValues.includes("4")) return "흐린 날씨가 계속될 수 있어요.";
-      return "대체로 맑고 구름이 조금 낄 수 있어요.";
+    function getSummaryComment(sky, pty) {
+      if (pty === "1" || pty === "4") return "비가 오는 날씨입니다. 우산을 챙기세요.";
+      if (pty === "3") return "눈이 내릴 수 있습니다. 미끄럼 주의하세요.";
+      if (sky === "1") return "하늘이 맑고 화창합니다.";
+      if (sky === "3" || sky === "4") return "구름 많은 흐린 날씨입니다.";
+      return "날씨 정보를 분석할 수 없습니다.";
     }
 
-    async function fetchWeatherData(baseDate, baseTime) {
-      const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=${serviceKey}&pageNo=1&numOfRows=1000&dataType=JSON&base_date=${baseDate}&base_time=${baseTime}&nx=${nx}&ny=${ny}`;
+    // 하루 중 강수 예보 확인
+    function checkForRainOrSnowToday(items, date) {
+      const todayItems = items.filter(i => i.fcstDate === date && i.category === "PTY");
+      const hasRain = todayItems.some(i => i.fcstValue === "1" || i.fcstValue === "4");
+      const hasSnow = todayItems.some(i => i.fcstValue === "3");
+
+      if (hasSnow) return " 하루 중 눈이 올 수 있어요, 미끄러지지 않게 조심하세요.";
+      if (hasRain) return " 하루 중 비가 올 수 있어요, 우산을 챙겨주세요.";
+      return "";
+    }
+
+    async function fetchWeatherData() {
+      const now = new Date();
+      const base_date = formatDate(now);
+      const base_time = getLatestForecastTime();
+
+      const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=${serviceKey}&pageNo=1&numOfRows=1000&dataType=JSON&base_date=${base_date}&base_time=${base_time}&nx=${nx}&ny=${ny}`;
       const res = await fetch(url);
+      const contentType = res.headers.get("content-type") || "";
+      if (!res.ok || !contentType.includes("application/json")) {
+        const errorText = await res.text();
+        console.error("응답 오류:", errorText);
+        throw new Error("⚠️ 날씨 정보를 불러올 수 없습니다.");
+      }
       const data = await res.json();
       return data.response.body.items.item;
     }
 
-    async function displayWeather() {
-      const today = new Date();
-      const baseDate = formatDate(today);
-      const baseTime = getBaseTime();
-      const items = await fetchWeatherData(baseDate, baseTime);
+    function extractWeather(items, date, time) {
+      const target = items.filter(i => i.fcstDate === date && i.fcstTime === time);
+      const result = { TMP: '-', SKY: '', PTY: '', REH: '-', WSD: '-' };
+      target.forEach(i => {
+        if (result[i.category] !== undefined) result[i.category] = i.fcstValue;
+      });
+      return result;
+    }
 
-      const timeSlots = { "morning": "0600", "noon": "1200", "evening": "1800" };
-      const skyValues = [], ptyValues = [], temps = {};
+    function createWeatherBox(title, weather, extraComment = "") {
+      const icon = getWeatherIcon(weather.SKY, weather.PTY);
+      const summary = getSummaryComment(weather.SKY, weather.PTY) + extraComment;
 
-      for (const slot in timeSlots) {
-        const filtered = items.filter(i => i.fcstDate === baseDate && i.fcstTime === timeSlots[slot]);
-        filtered.forEach(i => {
-          if (i.category === "SKY") skyValues.push(i.fcstValue);
-          if (i.category === "PTY") ptyValues.push(i.fcstValue);
-          if (i.category === "TMP") temps[slot] = i.fcstValue;
-        });
-      }
-
-      const comment = getComment(skyValues, ptyValues);
-
-      const container = document.getElementById("weatherContainer");
-      const box = document.createElement("div");
-      box.className = "weather-box";
-      box.innerHTML = `
-        <h2>오늘 요약</h2>
-        <p>${comment}</p>
-        <p>☀️ 아침 온도: ${temps.morning ?? '정보 없음'}°C</p>
-        <p>🌤️ 점심 온도: ${temps.noon ?? '정보 없음'}°C</p>
-        <p>🌙 저녁 온도: ${temps.evening ?? '정보 없음'}°C</p>
+      const div = document.createElement("div");
+      div.className = "weather-box";
+      div.innerHTML = `
+        <h2>${title}</h2>
+        <img src="images/${icon}" alt="날씨 아이콘">
+        <p>🌡️ 온도: ${weather.TMP}°C</p>
+        <p>💧 습도: ${weather.REH}%</p>
+        <p>🌬️ 풍속: ${weather.WSD}m/s</p>
+        <p><strong>${summary}</strong></p>
       `;
-      container.appendChild(box);
+      return div;
+    }
 
-      document.getElementById("loading").style.display = "none";
-      container.style.display = "flex";
-      container.style.justifyContent = "center";
-      container.style.flexWrap = "wrap";
+    async function displayWeather() {
+      try {
+        const items = await fetchWeatherData();
+        const now = new Date();
+        const today = formatDate(now);
+        const tomorrow = formatDate(new Date(now.getTime() + 86400000));
+        const time = getForecastHour();
+
+        const todayWeather = extractWeather(items, today, time);
+        const tomorrowWeather = extractWeather(items, tomorrow, time);
+        const rainSnowComment = checkForRainOrSnowToday(items, today);
+
+        const container = document.getElementById("weatherContainer");
+        container.appendChild(createWeatherBox("오늘 날씨", todayWeather, rainSnowComment));
+        container.appendChild(createWeatherBox("내일 날씨", tomorrowWeather));
+
+        document.getElementById("loading").style.display = "none";
+        container.style.display = "flex";
+        container.style.justifyContent = "center";
+        container.style.flexWrap = "wrap";
+      } catch (e) {
+        document.getElementById("loading").textContent = e.message;
+        console.error(e);
+      }
     }
 
     displayWeather();
